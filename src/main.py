@@ -68,6 +68,29 @@ def get_patient(nik, access_token, base_url='https://api-satusehat-stg.dto.kemke
     else:
         raise Exception(f"Failed to retrieve patient data: {response.status_code} - {response.text}")
 
+def get_practitioner(nik, access_token, base_url='https://api-satusehat-stg.dto.kemkes.go.id/fhir-r4/v1'):
+    """
+    Retrieve practitioner data from SatuSehat API using NIK.
+    """
+    if not access_token:
+        raise ValueError("Access token must be provided")
+
+    # Use the correct FHIR identifier system for NIK in SatuSehat
+    practitioner_url = f"{base_url}/Practitioner?identifier=https://fhir.kemkes.go.id/id/nik|{nik}"
+
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json'
+    }
+
+    response = requests.get(practitioner_url, headers=headers)
+
+    if response.status_code == 200:
+        practitioner_data = response.json()
+        return practitioner_data
+    else:
+        raise Exception(f"Failed to retrieve practitioner data: {response.status_code} - {response.text}")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Manage access token and patient data from SatuSehat API')
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
@@ -81,6 +104,10 @@ if __name__ == "__main__":
     # Patient subcommand
     patient_parser = subparsers.add_parser('patient', help='Retrieve patient data by NIK')
     patient_parser.add_argument('--nik', required=True, help='NIK (National Identity Number) of the patient')
+
+    # Practitioner subcommand
+    practitioner_parser = subparsers.add_parser('practitioner', help='Retrieve practitioner data by NIK')
+    practitioner_parser.add_argument('--nik', required=True, help='NIK (National Identity Number) of the practitioner')
 
     args = parser.parse_args()
 
@@ -125,5 +152,25 @@ if __name__ == "__main__":
             print(json.dumps(filtered_data, indent=2))
         except Exception as e:
             print(f"Error retrieving patient data: {e}")
+            if "401" in str(e):
+                print("Token may be expired. Use 'token update' to refresh the token.")
+    elif args.command == 'practitioner':
+        try:
+            with open('access_token.txt', 'r') as f:
+                access_token = f.read().strip()
+        except FileNotFoundError:
+            print("Error: access_token.txt not found. Use 'token update' to fetch a new token first.")
+            exit(1)
+        except Exception as e:
+            print(f"Error reading token: {e}")
+            exit(1)
+
+        try:
+            practitioner_data = get_practitioner(args.nik, access_token)
+            # Recursively filter out 'other' and 'link' fields from the response
+            filtered_data = filter_response(practitioner_data, ['other', 'link'])
+            print(json.dumps(filtered_data, indent=2))
+        except Exception as e:
+            print(f"Error retrieving practitioner data: {e}")
             if "401" in str(e):
                 print("Token may be expired. Use 'token update' to refresh the token.")
