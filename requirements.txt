@@ -1,0 +1,6 @@
+requests
+fhir.resources
+pynetdicom
+pynetdicom
+argparse
+python-dotenv
