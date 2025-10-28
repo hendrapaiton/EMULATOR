@@ -4,6 +4,7 @@ import argparse
 from dotenv import load_dotenv
 import json
 from fhir.resources.patient import Patient
+from fhir.resources.practitioner import Practitioner
 from fhir.resources.identifier import Identifier
 from fhir.resources.coding import Coding
 from fhir.resources.codeableconcept import CodeableConcept
@@ -91,7 +92,19 @@ def get_patient(nik, access_token, base_url='https://api-satusehat-stg.dto.kemke
 
 def get_practitioner(nik, access_token, base_url='https://api-satusehat-stg.dto.kemkes.go.id/fhir-r4/v1'):
     """
-    Retrieve practitioner data from SatuSehat API using NIK.
+    Retrieve practitioner data from SatuSehat API using NIK and parse into FHIR Practitioner resource.
+
+    Args:
+        nik (str): National Identity Number (NIK) of the practitioner.
+        access_token (str): Bearer token for API authentication.
+        base_url (str): Base URL for the SatuSehat FHIR API.
+
+    Returns:
+        Practitioner: FHIR Practitioner resource object.
+
+    Raises:
+        ValueError: If access_token is not provided.
+        Exception: If API request fails or parsing encounters an error.
     """
     if not access_token:
         raise ValueError("Access token must be provided")
@@ -108,7 +121,12 @@ def get_practitioner(nik, access_token, base_url='https://api-satusehat-stg.dto.
 
     if response.status_code == 200:
         practitioner_data = response.json()
-        return practitioner_data
+        # Parse the JSON response into a FHIR Practitioner resource
+        try:
+            practitioner_resource = Practitioner(**practitioner_data['entry'][0]['resource'])
+            return practitioner_resource
+        except (KeyError, IndexError) as e:
+            raise Exception(f"Failed to parse practitioner data: {e}")
     else:
         raise Exception(f"Failed to retrieve practitioner data: {response.status_code} - {response.text}")
 
@@ -189,10 +207,11 @@ if __name__ == "__main__":
             exit(1)
 
         try:
-            practitioner_data = get_practitioner(args.nik, access_token)
-            # Recursively filter out 'other' and 'link' fields from the response
-            filtered_data = filter_response(practitioner_data, ['other', 'link'])
-            print(json.dumps(filtered_data, indent=2))
+            practitioner_resource = get_practitioner(args.nik, access_token)
+            # Convert the FHIR Practitioner resource back to dict for filtering and printing
+            practitioner_dict = practitioner_resource.model_dump()
+            filtered_data = filter_response(practitioner_dict, ['other', 'link'])
+            print(json.dumps(filtered_data, indent=2, default=str))
         except Exception as e:
             print(f"Error retrieving practitioner data: {e}")
             if "401" in str(e):
