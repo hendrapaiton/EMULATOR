@@ -3,6 +3,10 @@ import requests
 import argparse
 from dotenv import load_dotenv
 import json
+from fhir.resources.patient import Patient
+from fhir.resources.identifier import Identifier
+from fhir.resources.coding import Coding
+from fhir.resources.codeableconcept import CodeableConcept
 
 def filter_response(data, keys_to_remove):
     """
@@ -47,7 +51,19 @@ def get_access_token(client_id, client_secret, base_url='https://api-satusehat-s
 
 def get_patient(nik, access_token, base_url='https://api-satusehat-stg.dto.kemkes.go.id/fhir-r4/v1'):
     """
-    Retrieve patient data from SatuSehat API using NIK.
+    Retrieve patient data from SatuSehat API using NIK and parse into FHIR Patient resource.
+
+    Args:
+        nik (str): National Identity Number (NIK) of the patient.
+        access_token (str): Bearer token for API authentication.
+        base_url (str): Base URL for the SatuSehat FHIR API.
+
+    Returns:
+        Patient: FHIR Patient resource object.
+
+    Raises:
+        ValueError: If access_token is not provided.
+        Exception: If API request fails or parsing encounters an error.
     """
     if not access_token:
         raise ValueError("Access token must be provided")
@@ -64,7 +80,12 @@ def get_patient(nik, access_token, base_url='https://api-satusehat-stg.dto.kemke
 
     if response.status_code == 200:
         patient_data = response.json()
-        return patient_data
+        # Parse the JSON response into a FHIR Patient resource
+        try:
+            patient_resource = Patient(**patient_data['entry'][0]['resource'])
+            return patient_resource
+        except (KeyError, IndexError) as e:
+            raise Exception(f"Failed to parse patient data: {e}")
     else:
         raise Exception(f"Failed to retrieve patient data: {response.status_code} - {response.text}")
 
@@ -100,6 +121,7 @@ if __name__ == "__main__":
     token_parser.add_argument('action', choices=['get', 'update'], help='Action to perform: get (retrieve from file) or update (fetch new token)')
     token_parser.add_argument('--client-id', help='Client ID for SatuSehat API', default=os.getenv('SATUSEHAT_CLIENT_ID'))
     token_parser.add_argument('--client-secret', help='Client Secret for SatuSehat API', default=os.getenv('SATUSEHAT_CLIENT_SECRET'))
+    token_parser.add_argument('--base-url', help='Base URL for SatuSehat API', default='https://api-satusehat-stg.dto.kemkes.go.id')
 
     # Patient subcommand
     patient_parser = subparsers.add_parser('patient', help='Retrieve patient data by NIK')
@@ -146,10 +168,11 @@ if __name__ == "__main__":
             exit(1)
 
         try:
-            patient_data = get_patient(args.nik, access_token)
-            # Recursively filter out 'other' and 'link' fields from the response
-            filtered_data = filter_response(patient_data, ['other', 'link'])
-            print(json.dumps(filtered_data, indent=2))
+            patient_resource = get_patient(args.nik, access_token)
+            # Convert the FHIR Patient resource back to dict for filtering and printing
+            patient_dict = patient_resource.model_dump()
+            filtered_data = filter_response(patient_dict, ['other', 'link'])
+            print(json.dumps(filtered_data, indent=2, default=str))
         except Exception as e:
             print(f"Error retrieving patient data: {e}")
             if "401" in str(e):
